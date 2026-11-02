@@ -1,0 +1,12 @@
+name: default
+n_true: 2000
+n_false: 20000      # rho = 0.1
+zipf_s: 1.1
+generations: 30
+seeds: 20
+rules: [empirical, good_turing, add_alpha]
+filters: [none, drop_singletons]
+lambdas: [0.0, 0.1, 0.3, 0.5]
+ns: [500, 1000, 2000, 4000]
+rule_kwargs:
+  add_alpha: {alpha: 0.01}

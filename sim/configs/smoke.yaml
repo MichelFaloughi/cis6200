@@ -1,0 +1,10 @@
+name: smoke
+n_true: 200
+n_false: 2000
+zipf_s: 1.1
+generations: 10
+seeds: 3
+rules: [empirical, good_turing]
+filters: [none]
+lambdas: [0.0, 0.3]
+ns: [200, 400]
