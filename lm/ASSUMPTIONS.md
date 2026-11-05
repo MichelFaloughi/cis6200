@@ -1,0 +1,18 @@
+# W3 assumptions table
+
+Berkan's feedback: question every assumption in W3 and connect it to real training pipelines.
+Each row says what we assumed, why, how a real pipeline differs, and which way the gap
+probably pushes our conclusions.
+
+| # | W3 assumption | Why we made it | Real pipelines | Likely effect of the gap |
+|---|---|---|---|---|
+| 1 | One fact per sentence, fixed template "The capital of E is V ." | Hallucination becomes an exact string match; q(H) is computable exactly | Facts are buried in free text, paraphrased, and mixed with non-factual content | Detection gets noisy; the mechanism should survive, but measured rates would be estimates |
+| 2 | Entity names are opaque single tokens; popularity is assigned in random order | Matches the *symmetric uncertainty / regularity* assumption of Topic 1B: a name gives no clue about its answer | Names carry signal ("New ___", language, region), so some unseen truths are inferable | Real models can beat the (1−ρ)·missing-mass bound, so our hallucination numbers are an upper-ish case |
+| 3 | Each entity has exactly one true value (a functional relation) | Natural for "capital of", birth dates, etc.; |L*| = #entities, ρ = 1/(V−1) | Many relations are functional; others (e.g. "works at") are not | Seeing one true fact rules out the other values for that entity, which flat-universe theory (sim/) ignores. In our runs most of the *growth* in hallucination comes from entities that ARE seen, but with an inherited false value |
+| 4 | Each generation is retrained from scratch | Clean recursion, matches the theory's q_t → sample → q_{t+1} | Continual pre-training / fine-tuning starts from the previous weights | Warm starts carry over earlier (more correct) knowledge, likely slowing the compounding |
+| 5 | Fixed training size n; synthetic data *replaces* real data except for a fresh fraction λ | Matches W1/W2 and the proposal | The web accumulates: old real data stays, synthetic data is added (Gerstgrasser et al. 2024) | Accumulation is known to stop collapse in other settings; we have not tried it yet (next step) |
+| 6 | Synthetic text is sampled from the model at temperature T with no top-p/top-k | Keeps q exact; temperature is the cleanest "breadth knob" | Production decoding uses top-p, top-k, RLHF'd models, and question-driven prompts | Top-p cuts the tail, which removes breadth (like MLE): less hallucination, more collapse |
+| 7 | GPT trained to convergence (100–200 epochs) unless "early-stopped" | Shows what MLE does when it can memorise everything | LLM pre-training sees most facts about once (≈1 epoch); rare facts are not memorised | The early-stopped regime is closer to reality, and in it the GPT hallucinates far more (see gpt_breadth.png a, c) |
+| 8 | Filters are idealised: "drop singletons" (count based) or an oracle fact-checker that catches each false sentence with prob. 0.5 | Interventions beyond fresh data (Surbhi's feedback) | Real filters are classifiers, de-duplication, perplexity filters, reward models | Perplexity filtering ≈ dropping low-probability (rare) items, which is close to "drop singletons": it kills breadth along with hallucination |
+| 9 | Small world: 1,000 entities × 50 cities (ρ = 0.02), n = 2,000 sentences, Zipf exponent 1.0 | Runs on a laptop CPU in minutes | Millions of entities, billions of tokens | Rates depend on n/|L*| and the Zipf tail; the *direction* of the effects is what we claim, not the numbers |
+| 10 | Metrics are computed from the model's exact distribution q, not from samples | Removes sampling noise | Real evaluations sample answers | We checked: sampled text gives the same hallucination rate (0.2% vs 0.2% exact) |
