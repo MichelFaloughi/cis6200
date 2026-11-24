@@ -213,10 +213,187 @@ def recursion_fig():
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 (after midterm): run_gpt_v2.py -> summary/gpt_v2_all.csv
+# ---------------------------------------------------------------------------
+V2 = os.path.join(HERE, "summary", "gpt_v2_all.csv")
+REG = [("conv_T1", S1, "trained to fit, T = 1"),
+       ("early_T1", S4, "early-stopped, T = 1"),
+       ("conv_T1.5", S2, "trained to fit, T = 1.5")]
+
+
+def _sub(df, s):
+    return df[df.setting == s]
+
+
+def v2_long_loop(df):
+    fig, ax = plt.subplots(1, 3, figsize=(13, 3.6))
+    for s, c, lab in REG:
+        d = _sub(df, s)
+        band(ax[0], d, "t", "h", c, lab)
+        band(ax[1], d, "t", "acc_p", c, lab)
+        band(ax[2], d, "t", "coverage", c, lab)
+    ax[0].axhline(1 - 1 / 49, color=INK2, lw=1, ls=":")
+    ax[0].text(0.2, 1 - 1 / 49 - 0.06, "1 − ρ (all-false limit)", color=INK2, fontsize=8.5)
+    ax[0].set(title="Hallucination rate of the text it writes", xlabel="generation t", ylim=(-0.02, 1.02))
+    ax[1].set(title="Accuracy (most likely answer is true)", xlabel="generation t", ylim=(0, 1))
+    ax[2].set(title="Share of true facts present in its data", xlabel="generation t", ylim=(0, 0.55))
+    ax[0].legend(fontsize=8.5, loc="center right")
+    n = _sub(df, "conv_T1").seed.nunique()
+    fig.suptitle(f"Tiny GPT retrained from scratch on its own text, 12 generations ({n} seeds; band = 10–90%)",
+                 x=0.01, ha="left", color=INK, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, "gpt_long_loop.png"), dpi=150)
+    plt.close(fig)
+
+
+def v2_accumulate(df):
+    fig, ax = plt.subplots(2, 3, figsize=(13, 6.2), sharex=True)
+    for j, (s, c, lab) in enumerate(REG):
+        for y, i in [("h", 0), ("acc_p", 1)]:
+            band(ax[i, j], _sub(df, s), "t", y, c, "replace (train on newest batch only)")
+            band(ax[i, j], _sub(df, s + "_acc"), "t", y, INK2, "accumulate, training grows with data", ls="--")
+            band(ax[i, j], _sub(df, s + "_acc_fc"), "t", y, S3, "accumulate, fixed training compute", ls=":")
+            ax[i, j].set(ylim=(-0.02, 1.02))
+        ax[0, j].set_title(lab)
+        ax[1, j].set_xlabel("generation t")
+    ax[0, 0].set_ylabel("hallucination rate")
+    ax[1, 0].set_ylabel("accuracy")
+    ax[0, 0].legend(fontsize=8.5, loc="upper left")
+    fig.suptitle("Replacing vs accumulating data (accumulate runs: 3 seeds each)", x=0.01, ha="left", color=INK, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, "gpt_accumulate.png"), dpi=150)
+    plt.close(fig)
+
+
+INTERV = [("", "none", S2), ("_lam0.3", "30% fresh real data", S1), ("_verify0.5", "fact-checker (catches 50%)", S3),
+          ("_drop1", "drop facts seen once", S4), ("_acc", "accumulate (training grows)", INK2)]
+SHORT = {"": "none", "_lam0.3": "30% fresh", "_verify0.5": "fact-check", "_drop1": "drop once-seen",
+         "_acc": "accumulate"}
+
+
+def v2_interventions(df):
+    fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
+    for k, base in enumerate(["conv_T1.5", "early_T1"]):
+        for suf, lab, c in INTERV:
+            d = _sub(df, base + suf)
+            if not d.empty:
+                band(ax[k], d, "t", "h", c, lab)
+        ax[k].set(title=f"Hallucination, {'trained to fit, T = 1.5' if k == 0 else 'early-stopped, T = 1'}",
+                  xlabel="generation t", ylim=(-0.02, 1.02))
+    ax[0].legend(fontsize=8, loc="upper left")
+    # trade-off at the last generation
+    last = df[df.t == df.t.max()]
+    for base, mk in [("conv_T1.5", "o"), ("early_T1", "s")]:
+        for suf, lab, c in INTERV:
+            d = _sub(last, base + suf)
+            if d.empty:
+                continue
+            ax[2].errorbar(d.h.mean(), d.acc_p.mean(), xerr=d.h.std(), yerr=d.acc_p.std(), fmt=mk, color=c,
+                           ms=7, capsize=2, lw=1)
+            dy = -12 if (base, suf) == ("early_T1", "_verify0.5") else 4
+            ax[2].annotate(SHORT[suf], (d.h.mean(), d.acc_p.mean()), xytext=(6, dy), textcoords="offset points",
+                           fontsize=7.5, color=INK2)
+    ax[2].plot([], [], "o", color=INK2, label="trained to fit, T = 1.5")
+    ax[2].plot([], [], "s", color=INK2, label="early-stopped, T = 1")
+    ax[2].legend(fontsize=8, loc="lower left")
+    ax[2].set(title="Where each fix ends up (generation 11)", xlabel="hallucination rate  (lower is better)",
+              ylabel="accuracy  (higher is better)", xlim=(0, 1), ylim=(0, 1))
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, "gpt_interventions.png"), dpi=150)
+    plt.close(fig)
+
+
+def v2_distribution(df):
+    fig, ax = plt.subplots(1, 3, figsize=(13, 3.6))
+    for k, base in enumerate(["conv_T1.5", "early_T1"]):
+        for suf, lab, c in [("_zipf0.7", "flatter tail (Zipf 0.7)", S1), ("", "Zipf 1.0 (default)", S2),
+                            ("_zipf1.3", "steeper tail (Zipf 1.3)", S3), ("_para", "3 phrasings per fact", S4)]:
+            band(ax[k], _sub(df, base + suf), "t", "h", c, lab)
+        ax[k].set(title=f"{'Trained to fit, T = 1.5' if k == 0 else 'Early-stopped, T = 1'}",
+                  xlabel="generation t", ylabel="hallucination rate" if k == 0 else None, ylim=(-0.02, 1.02))
+    ax[0].legend(fontsize=8, loc="lower right")
+    d = _sub(df, "conv_T1.5_para")
+    for nm, c, lab in [("A", S1, "“The capital of E is V”"), ("B", S3, "“E 's capital is V”"),
+                       ("C", S2, "“V is the capital of E” (reversed)")]:
+        band(ax[2], d, "t", f"h_{nm}", c, lab)
+    ax[2].set(title="3-phrasing run (fit, T = 1.5), by phrasing", xlabel="generation t",
+              ylim=(-0.02, 1.02))
+    ax[2].legend(fontsize=8, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, "gpt_distribution.png"), dpi=150)
+    plt.close(fig)
+
+
+def poster_figs(df):
+    """Two poster figures: big type, direct labels, minimal text."""
+    rc = {"font.size": 15, "axes.titlesize": 17, "axes.labelsize": 15, "xtick.labelsize": 13,
+          "ytick.labelsize": 13, "lines.linewidth": 3.2}
+    with plt.rc_context(rc):
+        # 1. the problem: hallucination compounds
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for s, c, lab in [("conv_T1.5", S2, "sampled with extra\nrandomness (T = 1.5)"),
+                          ("early_T1", S4, "under-trained model"),
+                          ("conv_T1", S1, "fully trained, plain sampling")]:
+            m = band(ax, _sub(df, s), "t", "h", c)
+            xy, kw = ((1.6, 0.80), {"ha": "left"}) if s == "conv_T1.5" else \
+                ((m.index[-1], m.values[-1]), dict(xytext=(-8, -26 if s != "conv_T1" else 14), textcoords="offset points"))
+            ax.annotate(lab, xy, **{"ha": "right", **kw}, fontsize=13, color=c, fontweight="bold")
+        ax.axhline(1 - 1 / 49, color=INK2, lw=1.2, ls=":")
+        ax.text(0, 1 - 1 / 49 + 0.02, "everything it says is false", color=INK2, fontsize=12)
+        ax.set(xlabel="generation (each trained only on the previous one's text)",
+               ylabel="share of its facts that are false", ylim=(-0.02, 1.08), xticks=range(0, 12, 2))
+        ax.set_title("Trained on its own output, a tiny GPT\nhallucinates more every round", loc="left")
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, "poster_compounding.png"), dpi=300)
+        plt.close(fig)
+
+        # 2. the fixes: every fix trades something
+        last = df[df.t == df.t.max()]
+        pts = [("conv_T1.5", "no fix", S2), ("conv_T1.5_lam0.3", "30% fresh real data", S1),
+               ("conv_T1.5_verify0.5", "fact-checker (catches 50%)", S3),
+               ("conv_T1.5_drop1", "drop facts seen once", S4),
+               ("conv_T1.5_acc_fc", "keep old data,\nsame compute", "#7a52c7"),
+               ("conv_T1.5_acc", "keep old data,\nmore compute", INK)]
+        off = {"no fix": (-10, 10, "right"), "30% fresh real data": (10, -26, "left"),
+               "fact-checker (catches 50%)": (10, -18, "left"), "drop facts seen once": (10, 8, "left"),
+               "keep old data,\nsame compute": (0, 16, "center"), "keep old data,\nmore compute": (0, 16, "center")}
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for s, lab, c in pts:
+            d = _sub(last, s)
+            ax.errorbar(d.h.mean(), d.acc_p.mean(), xerr=d.h.std(), yerr=d.acc_p.std(), fmt="o", color=c,
+                        ms=13, capsize=3, lw=1.5)
+            dx, dy, ha = off[lab]
+            ax.annotate(lab, (d.h.mean(), d.acc_p.mean()), xytext=(dx, dy), textcoords="offset points",
+                        ha=ha, fontsize=12.5, color=c, fontweight="bold")
+        ax.set(xlabel="share of its facts that are false  (lower is better)",
+               ylabel="accuracy  (higher is better)",
+               xlim=(0, 1), ylim=(0, 1))
+        ax.set_title("After 12 generations, every fix has a cost", loc="left")
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, "poster_fixes.png"), dpi=300)
+        plt.close(fig)
+
+
+def v2_figs():
+    df = pd.read_csv(V2)
+    v2_long_loop(df)
+    v2_accumulate(df)
+    v2_interventions(df)
+    v2_distribution(df)
+    poster_figs(df)
+
+
 if __name__ == "__main__":
+    import sys
+    if sys.argv[1:] == ["v2"]:          # python lm/plots.py v2  (needs only summary/gpt_v2_all.csv)
+        v2_figs()
+        raise SystemExit
     bigram_figs()
     recursion_fig()
     if os.path.exists(os.path.join(OUT, "gpt_breadth.csv")):
         gpt_figs()
         hero_fig()
+    if os.path.exists(V2):
+        v2_figs()
     print("figures in", FIG)
