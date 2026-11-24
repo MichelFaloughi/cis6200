@@ -13,6 +13,7 @@ When generation t+1 is trained on samples from generation t, does hallucination 
 theory/    W1 (Mohit): recursion derivation, lower bound, Wright-Fisher proposition
 sim/       W2 (Michel): NumPy simulator, parameter sweeps, phase diagrams
 lm/        W3 (Madhav): templated factoid corpus, bigram and small-GPT retraining loops
+           (results, figures and findings: lm/README.md)
 shared/    single source of truth for the model definition and metrics
 ```
 
@@ -32,8 +33,9 @@ python sim/plots.py results/default
 - [ ] W1 one-generation recursion for E[h_{t+1} | X_t]
 - [ ] W2 simulator: trajectories of (h_t, c_t, m_t) per rule
 - [ ] W2 phase diagram over (λ, n)
-- [ ] W3 bigram loop
-- [ ] W3 GPT loop
+- [x] W3 bigram loop
+- [x] W3 GPT loop (3 generations, midterm)
+- [x] W3 phase 2: 12-generation GPT loops, accumulate vs replace (with fixed-compute control), interventions (λ, drop singletons, fact-checker), Zipf and paraphrase variants. Poster figures: `lm/figures/poster_compounding.png`, `lm/figures/poster_fixes.png`; all runs in `lm/summary/gpt_v2_all.csv`
 - [ ] Related-work pass (see `shared/related_work.md`)
 
 ## References
